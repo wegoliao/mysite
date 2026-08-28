@@ -23,12 +23,52 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verify live site
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          BASE="${PAGE_URL%/}/"
+
+          curl --retry 12 --retry-all-errors --retry-delay 5 -fsSL "${BASE}" -o /tmp/root.html
+          curl --retry 12 --retry-all-errors --retry-delay 5 -fsSL "${BASE}01-profile/" -o /tmp/profile.html
+
+          grep -Fq 'Wego Lab｜Projects' /tmp/root.html
+          grep -Fq '01｜Wego Profile' /tmp/profile.html
+          grep -Fq '<style>' /tmp/profile.html
+          grep -Fq 'euphonious-torte-ee8da6.netlify.app' /tmp/profile.html
+
+          mkdir -p /tmp/json
+          for name in original family father-son parent couple learning happiness soul exciting abundant brother; do
+            curl --retry 12 --retry-all-errors --retry-delay 5 -fsSL "${BASE}data/${name}.json" -o "/tmp/json/${name}.json"
+          done
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          names = ['original','family','father-son','parent','couple','learning','happiness','soul','exciting','abundant','brother']
+          for name in names:
+              data = json.loads(Path(f'/tmp/json/{name}.json').read_text(encoding='utf-8'))
+              if not isinstance(data, list) or len(data) != 17:
+                  raise SystemExit(f'{name}.json invalid: expected 17 rows, got {len(data) if isinstance(data, list) else type(data).__name__}')
+              if any(not isinstance(row, list) or len(row) < 4 for row in data):
+                  raise SystemExit(f'{name}.json invalid row structure')
+          print('11 JSON files OK: 17 rows each')
+          PY
+
+          curl --retry 5 --retry-all-errors --retry-delay 3 -fsSL -o /dev/null 'https://euphonious-torte-ee8da6.netlify.app/?code=61299&count=5&layout=grid'
+          echo "Live site verification passed: ${BASE}"
